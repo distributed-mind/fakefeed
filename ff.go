@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/ed25519"
 	"log"
 	"os"
-	// "io"
+	"io"
 	"io/ioutil"
 	"strings"
 	"errors"
@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"time"
 	"crypto/sha256"
+	"path/filepath"
 
 )
 
@@ -43,7 +44,6 @@ type SignedMessage struct {
 
 // Message is a signed message
 type Message struct {
-	// Previous  string          `json:"previous"`
 	Previous  json.RawMessage `json:"previous"`
 	Author    string          `json:"author"`
 	Sequence  int             `json:"sequence"`
@@ -58,27 +58,42 @@ type Post struct {
 	Text string `json:"text"`
 }
 
+// Blob attributes
+type Blob struct {
+	BlobID string
+	Filepath string
+	Size int64
+}
+
 var (
-	message   string
 	localFeed string
+	blobDir   string
 	localID   IdentityData
 )
 
 func main() {
 
-	configCheck("./data")
-	message = os.Args[1]
+	// TODO: use real cli library
+	cmd := parseArg()
 
-	if message != "" {
+	switch cmd {
 
-		fmt.Printf("Writing message: %s\n", message)
+	case "msg":
+		message := os.Args[2]
 		writeMessage(message)
 
+	case "blob":
+		blobPath := os.Args[2]
+		blobID := importBlob(blobPath)
+		fmt.Printf("Imported blob: %s\n", blobID)
+	
+	default:
+		printHelp()
 	}
-
 }
 
 func writeMessage(message string) {
+	fmt.Printf("Writing message: %s\n", message)
 	seq := 0
 	files, err := ioutil.ReadDir(localFeed)
 	check(err, "error reading feed directory: "+localFeed)
@@ -100,7 +115,7 @@ func writeMessage(message string) {
 		Text: message,
 	}
 	content, err := json.MarshalIndent(post, "", "  ")
-	new := &Message{
+	new := Message{
 		Previous:  previousID,
 		Author:    localID.ID,
 		Sequence:  seq,
@@ -109,7 +124,7 @@ func writeMessage(message string) {
 		Content:   content,
 	}
 
-	msg, err := json.MarshalIndent(new, "", "  ")
+	msg, err := json.MarshalIndent(&new, "", "  ")
 	check(err, "error indenting json")
 
 	signature := base64.StdEncoding.EncodeToString(ed25519.Sign(localID.PrivateKey, msg)) + ".sig.ed25519"
@@ -149,14 +164,48 @@ func getMessageID(path string) ([]byte, error) {
 	return []byte(""), errors.New("error reading file")
 }
 
+func importBlob(path string) string {
+	fullpath, err := filepath.Abs(path)
+	check(err,"Resolving File path: " + path)
+	hash := sha256.New()
+	f, err := os.Open(fullpath)
+	check(err,"Opening File: " + fullpath)
+	defer f.Close()
+	_, err = io.Copy(hash, f)
+	check(err,"Reading File: " + fullpath)
+
+	bhash := base64.StdEncoding.EncodeToString(hash.Sum(nil))
+	blobID := "&" + bhash + ".sha256"
+	blobFilename := b64f(bhash) + ".sha256"
+
+	f, err = os.Open(fullpath)
+	check(err,"Opening File: " + fullpath)
+	defer f.Close()
+    blob, err := os.Create(blobDir + "/" + blobFilename)
+    check(err,"Creating File: " + blobDir + "/" + blobFilename)
+    defer blob.Close()
+
+    _, err = io.Copy(blob, f)
+    check(err,"Copying File: " + fullpath)
+
+	// fmt.Printf("BlobID: %v\nFilepath: %s\nSize: %v bytes\n", blobID, f.Name(), n)
+	
+	return blobID
+
+}
+
 func configCheck(configDir string) {
 	feedDir := configDir + "/feed"
 	if _, err := os.Stat(feedDir); os.IsNotExist(err) {
 		err = os.MkdirAll(feedDir, os.ModePerm)
 		check(err, "configCheck: making directory: "+feedDir)
 	}
+	blobDir = configDir + "/blob"
+	if _, err := os.Stat(blobDir); os.IsNotExist(err) {
+		err = os.MkdirAll(blobDir, os.ModePerm)
+		check(err, "configCheck: making directory: "+blobDir)
+	}
 	identity := loadIdentity(configDir + "/identity.json")
-	// idFeed := b64f(strings.Split(identity.Public, ".")[0])
 	idFeed := b64f(identity.Public)
 	if _, err := os.Stat(feedDir + "/" + idFeed); os.IsNotExist(err) {
 		err = os.MkdirAll(feedDir+"/"+idFeed, os.ModePerm)
@@ -206,6 +255,30 @@ func loadIdentity(filename string) IdentityData {
 	return identity
 }
 
+func parseArg() string {
+	cmd := "print help"
+	if !(len(os.Args) < 2) {
+		cmd = os.Args[1]
+		configCheck("./data")
+	}
+	return cmd
+}
+
+func printHelp() {
+	fmt.Println(`
+USAGE:
+######
+
+Post messages to your feed:
+ff msg "test message"
+
+Import a blob:
+ff blob /path/to/blob.file
+
+View imported blobs:
+ff blob`)
+}
+
 func b64f(s string) string {
 	// https://tools.ietf.org/html/rfc3548#page-6
 	if strings.Contains(s, "/") || strings.Contains(s, "+") {
@@ -227,10 +300,12 @@ func b64f(s string) string {
 // check .
 func check(err error, msg string) {
 	if err != nil {
-		log.Panicf(msg+` : Error : 
-###
+		log.Panicf(`
+########
+Error: `+msg+`
+########
 %v
-###
+########
 `, err)
 	}
 }
