@@ -31,7 +31,7 @@ type IdentityData struct {
 
 // SignedMessage is a signed message
 type SignedMessage struct {
-	Previous  string          `json:"previous"`
+	Previous  json.RawMessage `json:"previous"`
 	Author    string          `json:"author"`
 	Sequence  int             `json:"sequence"`
 	Timestamp int64           `json:"timestamp"`
@@ -43,7 +43,8 @@ type SignedMessage struct {
 
 // Message is a signed message
 type Message struct {
-	Previous  string          `json:"previous"`
+	// Previous  string          `json:"previous"`
+	Previous  json.RawMessage `json:"previous"`
 	Author    string          `json:"author"`
 	Sequence  int             `json:"sequence"`
 	Timestamp int64           `json:"timestamp"`
@@ -88,7 +89,7 @@ func writeMessage(message string) {
 	}
 	prev := seq
 	seq++
-	previousID := "null"
+	previousID := []byte("null")
 	if prev > 0 {
 		previousID, err = getMessageID(localFeed + "/" + strconv.Itoa(prev) + ".json")
     	check(err, "error getting message id: "+localFeed + "/" + strconv.Itoa(prev) + ".json")
@@ -132,7 +133,7 @@ func writeMessage(message string) {
 
 }
 
-func getMessageID(path string) (string, error) {
+func getMessageID(path string) ([]byte, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		check(err, "Message not found: "+path)
 	} else if _, err := os.Stat(path); err == nil {
@@ -141,11 +142,11 @@ func getMessageID(path string) (string, error) {
 		hash := sha256.Sum256(msg)
 		msgID := "%" + base64.StdEncoding.EncodeToString(hash[:]) + ".sha256"
 		// fmt.Printf("DEBUG: MessageID: %v\n", msgID)
-		return msgID, nil
+		return []byte(msgID), nil
 	} else {
 		check(errors.New("error reading file"), "getMessageID, path: "+path)
 	}
-	return "", errors.New("error reading file")
+	return []byte(""), errors.New("error reading file")
 }
 
 func configCheck(configDir string) {
