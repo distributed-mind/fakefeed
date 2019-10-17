@@ -100,7 +100,7 @@ func writeMessage(message string) {
 		Text: message,
 	}
 	content, err := json.MarshalIndent(post, "", "  ")
-	new := Message{
+	new := &Message{
 		Previous:  previousID,
 		Author:    localID.ID,
 		Sequence:  seq,
@@ -140,7 +140,7 @@ func getMessageID(path string) ([]byte, error) {
 		msg, err := ioutil.ReadFile(path)
 	    check(err, "reading file: "+path)
 		hash := sha256.Sum256(msg)
-		msgID := "%" + base64.StdEncoding.EncodeToString(hash[:]) + ".sha256"
+		msgID := `"%` + base64.StdEncoding.EncodeToString(hash[:]) + `.sha256"`
 		// fmt.Printf("DEBUG: MessageID: %v\n", msgID)
 		return []byte(msgID), nil
 	} else {
